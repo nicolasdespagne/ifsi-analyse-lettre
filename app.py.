@@ -1,0 +1,100 @@
+!pip install openai gradio
+
+import openai
+import gradio as gr
+import os
+
+# 🔑 Clé API OpenAI (Remplace par ta clé)
+from dotenv import load_dotenv
+load_dotenv()
+
+def is_valid_motivation_letter(text):
+    """ Vérifie si le texte correspond bien à une lettre de motivation pour l'IFSI. """
+    keywords = ["infirmier", "IFSI", "motivation", "soins", "patients", "stages", "formation", "études"]
+    return any(word in text.lower() for word in keywords) and len(text) > 200
+
+def analyze_ifsi_motivation(motivation):
+    try:
+        if not os.environ["OPENAI_API_KEY"]:
+            return "❌ Erreur : La clé API OpenAI est absente. Vérifiez votre configuration."
+
+        if not is_valid_motivation_letter(motivation):
+            return "❌ Le texte soumis ne semble pas être une lettre de motivation pour l'IFSI. Merci de vérifier votre saisie."
+
+        client = openai.OpenAI()
+        thread = client.beta.threads.create()
+
+        user_message = f"""
+        ## 📄 Analyse de la Lettre de Motivation IFSI
+
+        📌 **Lettre de Motivation** :
+        {motivation}
+
+        ---
+        🔎 **Consignes pour l’analyse** :
+        - Vérifier si le texte est bien une lettre de motivation pour l’IFSI.
+        - Analyser **les points forts et les axes d’amélioration**.
+        - Donner des recommandations pour optimiser la lettre.
+        """
+
+        client.beta.threads.messages.create(
+            thread_id=thread.id,
+            role="user",
+            content=user_message
+        )
+
+        run = client.beta.threads.runs.create(
+            thread_id=thread.id,
+            assistant_id=ASSISTANT_ID
+        )
+
+        while True:
+            run_status = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
+            if run_status.status == "completed":
+                break
+
+        messages = client.beta.threads.messages.list(thread_id=thread.id)
+
+        # ✅ Vérification si l'API retourne bien du contenu
+        if not messages.data or not messages.data[0].content:
+            return "❌ Erreur : L'analyse de la lettre n'a pas fonctionné. Merci de réessayer plus tard."
+
+        response = messages.data[0].content[0].text.value
+
+        # ✅ Vérification si la structure du texte retourné est correcte avant de faire des split()
+        if "🏆 ✅ Points forts :" not in response or "🚀 🛠️ Points à améliorer :" not in response:
+            return f"⚠️ L’analyse a détecté des éléments intéressants, mais un ajustement personnalisé pourrait améliorer la candidature. Découvrez les résultats :\n\n{response}"
+
+        formatted_response = f"""
+        ## 🎯 Analyse personnalisée de ta lettre de motivation :
+
+        🏆 ✅ **Points forts :**  
+        {response.split("🏆 ✅ Points forts :")[1].split("🚀 🛠️ Points à améliorer :")[0].strip()}
+
+        🚀 🛠️ **Axes d'amélioration :**  
+        {response.split("🚀 🛠️ Points à améliorer :")[1].strip()}
+
+        ---
+        📢 **Besoin d’un avis expert pour aller plus loin ?**  
+        🎯 Un **coaching personnalisé** peut t’aider à structurer ta lettre, affiner tes arguments et optimiser tes chances d’admission en IFSI ! 🚀  
+        """
+        
+        return formatted_response
+
+    except Exception as e:
+        return f"❌ Erreur : {str(e)}"
+
+# 🌟 Interface utilisateur avec Gradio
+with gr.Blocks() as app:
+    gr.Markdown("# 📝 **Évaluation de votre Lettre de Motivation IFSI**")
+    gr.Markdown("Déposez votre lettre et recevez une analyse détaillée avec des conseils personnalisés.")
+
+    input_text = gr.Textbox(label="Lettre de Motivation", lines=15, placeholder="Copie ta lettre ici...")
+    output_text = gr.Markdown()
+
+    btn = gr.Button("📩 Soumettre")
+
+    btn.click(fn=analyze_ifsi_motivation, inputs=input_text, outputs=output_text)
+
+# 🚀 Lancer l’application Gradio
+app.launch()
